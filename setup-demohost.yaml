@@ -1,0 +1,57 @@
+---
+- name: "Setup the ansible demo host"
+  hosts: demohosts
+  become: true
+  gather_facts: true
+  vars:
+    username: ansible
+    pubkey: labkey.pub
+    privkey: labkey
+    repos:
+      - name: lightbulb
+        url: "https://github.com/ansible/lightbulb.git"
+      - name: ansiblepreso
+        url: "https://github.com/intlug/ansiblepreso.git"
+  tasks:
+    - name: Install Packages
+      ansible.builtin.package:
+        name: "{{ item }}"
+        state: present
+      with_items:
+        - ansible
+        - git
+        - vim
+    - name: Update all packages
+      ansible.builtin.package:
+        name: "*"
+        state: latest
+
+    - name: Copy the private key to demo host
+      ansible.builtin.copy:
+        dest: /home/ansible/.ssh/id_rsa
+        src: "{{ privkey }}"
+        owner: ansible
+        group: ansible
+        mode: "0600"
+    - name: Copy the public key to the demo host
+      ansible.builtin.copy:
+        dest: /home/ansible/.ssh/id_rsa.pub
+        src: "{{ pubkey }}"
+        owner: "{{ username }}"
+        group: "{{ username }}"
+        mode: "0664"
+
+    - name: Add git repo for presentation and demo
+      ansible.builtin.git:
+        repo: "{{ item.url }}"
+        clone: true
+        dest: "$HOME/{{ item.name }}"
+      with_items: "{{ repos }}"
+      become: false
+
+    - name: Copy the initial inventory file
+      ansible.builtin.copy:
+        src: "inventory"
+        dest: "inventory"
+        mode: "0664"
+      become: false

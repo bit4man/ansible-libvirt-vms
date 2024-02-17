@@ -1,0 +1,7 @@
+---
+plugin: community.libvirt.libvirt
+uri: 'qemu:///system'
+groups: 
+  libvirt:
+use_connection_plugin: True
+#filter: "demohost-[1:3]"

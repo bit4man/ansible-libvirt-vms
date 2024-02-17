@@ -1,0 +1,79 @@
+---
+# Create demo hosts for Ansible talk for INTLUG
+# noqa: var-naming[no-role-prefix]
+
+- name: "Create INTLUG Fedora VMs"
+  hosts: localhost
+  become: false
+  connection: local
+  gather_facts: false
+  vars:
+    full: https://download.fedoraproject.org/pub/fedora/linux/releases/39/Cloud/x86_64/images/Fedora-Cloud-Base-39-1.5.x86_64.qcow2
+    download_src: https://download.fedoraproject.org/pub/fedora/linux/releases
+    frelease: 39
+    version: "39-1.5"
+    arch: "x86_64"
+    baseimage: "Fedora-Cloud-Base-{{ version }}.{{ arch }}.qcow2"
+    geturl: "{{ download_src }}/{{ frelease }}/Cloud/{{ arch }}/images/{{ baseimage }}"
+    checksum: "{{ download_src }}/{{ frelease }}/Cloud/{{ arch }}/images/Fedora-Cloud-{{ version }}-{{ arch }}-CHECKSUM"
+    imagedest: "/VirtualMachines/{{ baseimage }}"
+    ssh_pub_key: "$HOME/Projects/intlug/ansible/files/labkey.pub"
+    vcpus: 2
+    ram_mb: 4096
+    cleanup: false
+    net: default
+    labvms:
+      - intlug-demohost
+      - intlug-host1
+      - intlug-host2
+      - intlug-host3
+  vars_files:
+    - secrets.yaml
+  module_defaults:
+    - community.libvirt.virt:
+        uri: "{{ libvirt_url | default('qemu:///system') }}"
+  tasks:
+    - name: Get Fedora Server QCOW image
+      become: true
+      ansible.builtin.get_url:
+        url: "{{ geturl }}"
+        dest: "{{ imagedest }}"
+        mode: "0664"
+        owner: qemu
+        group: libvirt
+        # checksum: "sha256:{{ checksum }}"
+
+    - name: Resize base image
+      ansible.builtin.command: "qemu-img resize {{ imagedest }} 20G"
+      become: true
+      register: cmd_output
+      changed_when: cmd_output.rc != 0
+
+    - name: Create snapshot templates for new VMs
+      ansible.builtin.command: "qemu-img create -f qcow2 -b {{ imagedest }} -F qcow2 /VirtualMachines/{{ item }}.qcow2 10G"
+      become: true
+      register: cmd_output
+      changed_when: cmd_output.rc != 0
+      with_items: "{{ labvms }}"
+
+    - name: Fix security on base images
+      become: true
+      ansible.builtin.file:
+        path: "/VirtualMachines/{{ item }}.qcow2"
+        mode: "0664"
+        owner: qemu
+        group: peter
+      with_items: "{{ labvms }}"
+
+    - name: KVM Provision VMs
+      ansible.builtin.include_role:
+        name: virt_provision
+      with_items: "{{ labvms }}"
+      vars:
+        libvirt_pool_dir: "/VirtualMachines"
+        vmname: "{{ item }}"
+        vm_vcpus: "{{ vcpus }}"
+        vm_ram_mb: "{{ ram_mb }}"
+        vm_net: "{{ net }}"
+        cleanup_tmp: "{{ cleanup }}"
+        ssh_key: "{{ ssh_pub_key }}"

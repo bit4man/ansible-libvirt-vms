@@ -1,0 +1,6 @@
+.ansible
+.vscode
+secrets.yaml
+vault.pwd
+files/labkey
+*.qcow2

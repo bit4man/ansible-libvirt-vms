@@ -1,0 +1,46 @@
+---
+# tasks file for virt_provision
+- name: Ensure requirements in place
+  ansible.builtin.package:
+    name:
+      - guestfs-tools
+      - python3-libvirt
+    state: present
+  become: true
+
+- name: Get VMs list
+  community.libvirt.virt:
+    command: list_vms
+  register: existing_vms
+  changed_when: false
+
+- name: Create VM if not exists
+  block:
+    - name: Configure the image
+      ansible.builtin.command: |
+        virt-customize -a {{ libvirt_pool_dir }}/{{ vmname }}.qcow2 \
+        --hostname {{ vmname }} \
+        --run-command 'useradd -m -G wheel -p "$1$MPxn3pxM$fGiYzK4hxgfUJmRFVkxhS0" ansible' \
+        --run-command 'echo -n pass1 | passwd --stdin ansible'
+        --run-command 'echo "ansible  ALL=(ALL)   NOPASSWD: ALL" >> /etc/sudoers'
+        --ssh-inject 'ansible:file:{{ ssh_key }}' \
+        --uninstall cloud-init \
+        --no-selinux-relabel \
+        --run-command 'touch /.autorelabel'
+      register: cmdout
+      changed_when: cmdout.rc != 0
+
+    - name: Define vm
+      community.libvirt.virt:
+        command: define
+        xml: "{{ lookup('template', 'vmdomain.xml.j2') }}"
+  when: "vmname not in existing_vms.list_vms"
+
+- name: Ensure VM is started
+  community.libvirt.virt:
+    name: "{{ vmname }}"
+    state: running
+  register: vm_start_results
+  until: "vm_start_results is success"
+  retries: 15
+  delay: 2
